@@ -16,6 +16,7 @@ from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 import fetchers
 import storage
@@ -199,6 +200,15 @@ def api_sources(hours: int = 24):
 @app.get("/")
 def index():
     return FileResponse(os.path.join(BASE_DIR, "static", "index.html"))
+
+
+# 开发辅助：PDF速览页与其截图素材（/overview 预览）
+app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "assets")), name="assets")
+
+
+@app.get("/overview")
+def overview_page():
+    return FileResponse(os.path.join(BASE_DIR, "overview.html"))
 
 
 if __name__ == "__main__":

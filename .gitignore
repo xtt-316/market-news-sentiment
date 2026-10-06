@@ -24,3 +24,9 @@ Thumbs.db
 
 # ZCode 会话文件
 .zcode/
+
+# PDF 速览页素材与生成物（个人附件，不入库）
+assets/
+overview.html
+shoot.js
+项目速览*.pdf

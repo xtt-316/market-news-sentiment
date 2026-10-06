@@ -28,5 +28,5 @@ Thumbs.db
 # PDF 速览页素材与生成物（个人附件，不入库）
 assets/
 overview.html
-shoot.js
+shoot*.js
 项目速览*.pdf

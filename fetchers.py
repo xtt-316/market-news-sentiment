@@ -332,6 +332,112 @@ def _fetch_index_kline_em(secid="1.000001", klt=60, days=10):
         return []
 
 
+# ---------------------------------------------------------------- 板块元数据
+_SINA_HY_RE = re.compile(r"\{.*\}")
+
+
+def fetch_sector_list():
+    """行业板块列表 [{code,name,count}]。新浪行业分类为主，东财板块为备用。"""
+    out = _fetch_sector_list_sina()
+    if out:
+        return out
+    return _fetch_sector_list_em()
+
+
+def _fetch_sector_list_sina():
+    """新浪行业分类（约60个一级行业），GBK 编码的 JS 变量"""
+    url = "https://vip.stock.finance.sina.com.cn/q/view/newSinaHy.php"
+    try:
+        h = dict(HEADERS)
+        h["Referer"] = "https://finance.sina.com.cn/"
+        r = requests.get(url, headers=h, timeout=10)
+        r.raise_for_status()
+        r.encoding = "gbk"
+        m = _SINA_HY_RE.search(r.text)
+        data = json.loads(m.group(0))
+        out = []
+        for v in data.values():
+            parts = v.split(",")
+            if len(parts) >= 3:
+                out.append({"code": parts[0], "name": parts[1], "count": int(parts[2])})
+        return out
+    except Exception:
+        return []
+
+
+def _fetch_sector_list_em():
+    """东财行业板块列表（push2 偶发限流，作为备用源）"""
+    out = []
+    for pn in range(1, 10):
+        url = ("https://push2.eastmoney.com/api/qt/clist/get?pn=%d&pz=100"
+               "&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2+f:!50&fields=f12,f14" % pn)
+        try:
+            data = _get(url, referer="https://quote.eastmoney.com/center/boardlist.html")
+            rows = (data.get("data") or {}).get("diff") or []
+        except Exception:
+            break
+        if not rows:
+            break
+        for it in rows:
+            code, name = it.get("f12"), it.get("f14")
+            if code and name:
+                out.append({"code": code, "name": name, "count": 0})
+        if len(rows) < 100:
+            break
+        time.sleep(0.2)
+    return out
+
+
+def fetch_sector_stocks(sector_code, max_pages=6):
+    """板块成分股 [{code,name}]。按板块代码前缀自动选源（new_=新浪 / BK_=东财）"""
+    if sector_code.startswith("new_"):
+        return _fetch_sector_stocks_sina(sector_code, max_pages)
+    return _fetch_sector_stocks_em(sector_code, max_pages)
+
+
+def _fetch_sector_stocks_sina(node, max_pages=6):
+    out = []
+    for page in range(1, max_pages + 1):
+        url = ("https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+               "Market_Center.getHQNodeData?node=%s&page=%d&num=100" % (node, page))
+        try:
+            h = dict(HEADERS)
+            h["Referer"] = "https://finance.sina.com.cn/"
+            r = requests.get(url, headers=h, timeout=10)
+            r.raise_for_status()
+            rows = json.loads(r.text)
+        except Exception:
+            break
+        if not rows:
+            break
+        out.extend({"code": str(x.get("code") or ""), "name": x.get("name") or ""}
+                   for x in rows if x.get("code"))
+        if len(rows) < 100:
+            break
+        time.sleep(0.15)
+    return out
+
+
+def _fetch_sector_stocks_em(sector_code, max_pages=3):
+    out = []
+    for pn in range(1, max_pages + 1):
+        url = ("https://push2.eastmoney.com/api/qt/clist/get?pn=%d&pz=100"
+               "&po=1&np=1&fltt=2&invt=2&fid=f3&fs=b:%s+f:!50&fields=f12,f14" % (pn, sector_code))
+        try:
+            data = _get(url, referer="https://quote.eastmoney.com/center/boardlist.html")
+            rows = (data.get("data") or {}).get("diff") or []
+        except Exception:
+            break
+        if not rows:
+            break
+        out.extend({"code": r.get("f12"), "name": r.get("f14")}
+                   for r in rows if r.get("f12"))
+        if len(rows) < 100:
+            break
+        time.sleep(0.2)
+    return out
+
+
 FETCHERS_INCREMENTAL = [
     lambda: fetch_sina724(1, 50),
     lambda: fetch_sinaroll(1, 50),

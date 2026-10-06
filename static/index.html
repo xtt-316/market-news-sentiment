@@ -41,6 +41,11 @@
   #mainChart{height:340px}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
   #srcChart{height:250px} #posnegChart{height:250px} #kwChart{height:300px}
+  .sectorRow{display:grid;grid-template-columns:1.1fr 1fr;gap:8px}
+  #sectorRank{height:300px} #sectorHeat{height:300px}
+  #sectorDetail{border-top:1px solid var(--border);margin-top:10px;padding-top:8px}
+  .drillHead{font-size:13px;font-weight:700;margin-bottom:4px;color:var(--blue)}
+  #drillChart{height:170px}
 
   .tabs{display:flex;gap:6px}
   .tabs button{background:var(--panel2);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:3px 12px;cursor:pointer;font-size:12px}
@@ -130,6 +135,18 @@
     <div class="panel"><h3>正 / 负面新闻量趋势 <span class="note">24小时 · 按小时堆叠</span></h3><div id="posnegChart" class="chart"></div></div>
   </div>
 
+  <div class="panel">
+    <h3>板块情绪 <span class="note" id="sectorDrill">24小时 · 点击板块查看分时情绪</span></h3>
+    <div class="sectorRow">
+      <div id="sectorRank" class="chart"></div>
+      <div id="sectorHeat" class="chart"></div>
+    </div>
+    <div id="sectorDetail" style="display:none">
+      <div class="drillHead" id="drillTitle">板块分时情绪</div>
+      <div id="drillChart" class="chart"></div>
+    </div>
+  </div>
+
   <div class="newsRow">
     <div class="panel">
       <h3>实时快讯流
@@ -185,7 +202,9 @@ async function loadOverview(){
     if(sh){
       $("vSh").textContent = sh.price;
       $("vSh").className = "v " + (sh.pct >= 0 ? "up":"down");
-      $("vShSub").innerHTML = `${sh.pct>=0?"涨":"跌"} <b class="${sh.pct>=0?"up":"down"}">${sh.pct>=0?"+":""}${sh.pct}%</b>（${sh.chg>=0?"+":""}${sh.chg}）`;
+      const corr = (d.corr_sh_24h === null || d.corr_sh_24h === undefined) ? "-" :
+        (d.corr_sh_24h > 0 ? "+" : "") + d.corr_sh_24h.toFixed(2);
+      $("vShSub").innerHTML = `${sh.pct>=0?"涨":"跌"} <b class="${sh.pct>=0?"up":"down"}">${sh.pct>=0?"+":""}${sh.pct}%</b> · 情绪相关性 <b>${corr}</b>`;
     }
     $("vPos").textContent = d.stat.today_pos;
     $("vNeg").textContent = d.stat.today_neg;
@@ -207,29 +226,47 @@ async function loadTimeline(){
     (d.kline||[]).forEach(k => labels.add(k.dt));
     const xs = [...labels].sort();
     const idx = xs.map(x => { const f=(d.hourly||[]).find(h=>h.hour===x); return f? f.index : null; });
+    const ewmaF = xs.map(x => { const f=(d.hourly||[]).find(h=>h.hour===x); return f? f.ewma_fast : null; });
+    const ewmaS = xs.map(x => { const f=(d.hourly||[]).find(h=>h.hour===x); return f? f.ewma_slow : null; });
     const cnt = xs.map(x => { const f=(d.hourly||[]).find(h=>h.hour===x); return f? f.n : 0; });
     const posc = xs.map(x => { const f=(d.hourly||[]).find(h=>h.hour===x); return f? f.pos_cnt : 0; });
     const negc = xs.map(x => { const f=(d.hourly||[]).find(h=>h.hour===x); return f? f.neg_cnt : 0; });
     const sh = xs.map(x => { const k=(d.kline||[]).find(k=>k.dt===x); return k? k.close : null; });
     const lbl = xs.map(fmtHour);
+    // 情绪极值点（|指数|>=40）标记
+    const extremes = [];
+    idx.forEach((v, i) => {
+      if (v !== null && Math.abs(v) >= 40) extremes.push({
+        coord: [i, v], value: v,
+        symbol: v > 0 ? 'pin' : 'pin', symbolSize: 38,
+        itemStyle: { color: v > 0 ? 'rgba(240,74,94,.85)' : 'rgba(46,204,143,.85)' },
+        label: { fontSize: 9, color: '#fff' },
+      });
+    });
 
     charts.main = charts.main || echarts.init($("mainChart"));
     charts.main.setOption({
       tooltip:{trigger:"axis", backgroundColor:"#1c2230", borderColor:"#2c3550", textStyle:{color:"#dce1ea"}},
-      legend:{data:["情绪指数","上证指数","新闻量(右)"], textStyle:{color:"#8b93a5"}, top:0},
+      legend:{data:["情绪指数","情绪快线","情绪慢线","上证指数","新闻量(右)"], textStyle:{color:"#8b93a5"}, top:0},
       grid:{left:56,right:56,top:34,bottom:28},
       xAxis:{type:"category", data:lbl, axisLine:{lineStyle:{color:"#2c3550"}}, axisLabel:{color:"#8b93a5"}},
       yAxis:[
         {type:"value",name:"情绪",min:-100,max:100,splitLine:{lineStyle:{color:"#1e2534"}},axisLabel:{color:"#8b93a5"},nameTextStyle:{color:"#8b93a5"}},
         {type:"value",name:"上证",scale:true,splitLine:{show:false},axisLabel:{color:"#8b93a5"},nameTextStyle:{color:"#8b93a5"}},
-        {type:"value",name:"条数",splitLine:{show:false},axisLabel:{color:"#8b93a5"},nameTextStyle:{color:"#8b93a5"}}
+        {type:"value",splitLine:{show:false},axisLabel:{show:false},nameTextStyle:{color:"#8b93a5"}}
       ],
       series:[
-        {name:"情绪指数",type:"line",data:idx,yAxisIndex:0,smooth:true,symbol:"none",lineStyle:{width:2.5,color:"#5b8cff"},
+        {name:"情绪指数",type:"line",data:idx,yAxisIndex:0,smooth:true,symbol:"none",color:"#5b8cff",lineStyle:{width:2.5,color:"#5b8cff"},
          areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:"rgba(91,140,255,.35)"},{offset:1,color:"rgba(91,140,255,0)"}])},
-         markLine:{silent:true,symbol:"none",lineStyle:{color:"#555",type:"dashed"},data:[{yAxis:0}],label:{show:false}}},
-        {name:"上证指数",type:"line",data:sh,yAxisIndex:1,smooth:true,symbol:"none",connectNulls:true,lineStyle:{width:1.4,color:"#f5a623",opacity:.9}},
-        {name:"新闻量(右)",type:"bar",data:cnt,yAxisIndex:2,barWidth:"55%",itemStyle:{color:"rgba(140,150,175,.22)"}}
+         markLine:{silent:true,symbol:"none",lineStyle:{color:"#555",type:"dashed"},data:[{yAxis:0}],label:{show:false}},
+         markPoint:{data:extremes}},
+        {name:"情绪快线",type:"line",data:ewmaF,yAxisIndex:0,smooth:true,symbol:"none",connectNulls:true,color:"#f5a623",
+         lineStyle:{width:1.3,color:"#f5a623",type:"dashed",opacity:.9}},
+        {name:"情绪慢线",type:"line",data:ewmaS,yAxisIndex:0,smooth:true,symbol:"none",connectNulls:true,color:"#b197fc",
+         lineStyle:{width:1.3,color:"#b197fc",type:"dashed",opacity:.9}},
+        {name:"上证指数",type:"line",data:sh,yAxisIndex:1,smooth:true,symbol:"none",connectNulls:true,color:"#3ddad7",
+         lineStyle:{width:1.4,color:"#3ddad7",opacity:.75}},
+        {name:"新闻量(右)",type:"bar",data:cnt,yAxisIndex:2,barWidth:"55%",color:"rgba(140,150,175,.22)",itemStyle:{color:"rgba(140,150,175,.22)"}}
       ]
     }, {replaceOpt:true});
 
@@ -276,6 +313,72 @@ async function loadKeywords(){
       yAxis:{type:"category",data:items.map(i=>i.word),axisLabel:{color:"#dce1ea"},axisLine:{lineStyle:{color:"#2c3550"}},axisTick:{show:false}},
       series:[{type:"bar",data:items.map(i=>i.count),barWidth:10,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:"#2b4a8f"},{offset:1,color:"#5b8cff"}]),borderRadius:3},label:{show:true,position:"right",color:"#8b93a5",fontSize:11}}]
     }, {replaceOpt:true});
+  }catch(e){ console.error(e); }
+}
+
+/* ---------------- 板块情绪 ---------------- */
+let sectorData = [];
+async function loadSectors(){
+  try{
+    const d = await (await fetch("/api/sectors?hours=24&min_n=3")).json();
+    sectorData = (d.items||[]).slice(0, 18);
+    const items = sectorData.slice().reverse();
+
+    charts.srank = charts.srank || echarts.init($("sectorRank"));
+    charts.srank.setOption({
+      tooltip:{backgroundColor:"#1c2230",borderColor:"#2c3550",textStyle:{color:"#dce1ea"},
+        formatter:p=>`${p[0].name}<br>情绪 <b>${p[0].value}</b> · ${p[0].data.cnt}条（正${p[0].data.pos}/负${p[0].data.neg}）`},
+      grid:{left:76,right:44,top:6,bottom:22},
+      xAxis:{type:"value",min:-60,max:60,splitLine:{lineStyle:{color:"#1e2534"}},axisLabel:{color:"#8b93a5"}},
+      yAxis:{type:"category",data:items.map(i=>i.name),axisLabel:{color:"#dce1ea",fontSize:11},axisLine:{lineStyle:{color:"#2c3550"}}},
+      series:[{type:"bar",data:items.map(i=>({value:i.index,cnt:i.n,pos:i.pos_cnt,neg:i.neg_cnt,code:i.code,
+        itemStyle:{color:i.index>=0?"#f04a5e":"#2ecc8f",borderRadius:3}})),
+        barWidth:11,label:{show:true,position:"right",color:"#8b93a5",fontSize:10,formatter:p=>p.value}}]
+    }, {replaceOpt:true});
+    charts.srank.off("click"); charts.srank.on("click", e => drillSector(e.data.code, e.name));
+
+    charts.heat = charts.heat || echarts.init($("sectorHeat"));
+    const norm = v => Math.max(-1, Math.min(1, v / 60));  // ±60 映射到 [-1,1]
+    charts.heat.setOption({
+      tooltip:{backgroundColor:"#1c2230",borderColor:"#2c3550",textStyle:{color:"#dce1ea"},
+        formatter:p=>`${p.name}<br>情绪 <b>${p.data.idx}</b> · ${p.data.cnt}条`},
+      series:[{
+        type:"treemap", roam:false, nodeClick:false, breadcrumb:{show:false},
+        itemStyle:{borderColor:"#0d1117",borderWidth:2,gapWidth:2},
+        label:{show:true,formatter:"{b}\n{c}条",fontSize:11,color:"#fff"},
+        data:sectorData.map(i=>({
+          name:i.name, value:Math.max(i.n,3), code:i.code, idx:i.index, cnt:i.n,
+          itemStyle:{color: norm(i.index)>=0
+            ? `rgba(240,74,94,${0.15+0.7*norm(i.index)})`
+            : `rgba(46,204,143,${0.15+0.7*-norm(i.index)})`}
+        }))
+      }]
+    }, {replaceOpt:true});
+    charts.heat.off("click"); charts.heat.on("click", e => drillSector(e.data.code, e.name));
+  }catch(e){ console.error(e); }
+}
+
+async function drillSector(code, name){
+  try{
+    const d = await (await fetch(`/api/sectors/${encodeURIComponent(code)}/timeline?hours=72`)).json();
+    const box = $("sectorDetail");
+    box.style.display = "block";
+    $("drillTitle").textContent = `▸ ${name} · 72小时分时情绪`;
+    const items = d.items||[];
+    charts.drill = charts.drill || echarts.init($("drillChart"));
+    charts.drill.setOption({
+      tooltip:{trigger:"axis",backgroundColor:"#1c2230",borderColor:"#2c3550",textStyle:{color:"#dce1ea"}},
+      grid:{left:40,right:16,top:10,bottom:22},
+      xAxis:{type:"category",data:items.map(i=>fmtHour(i.hour)),axisLabel:{color:"#8b93a5",fontSize:10},axisLine:{lineStyle:{color:"#2c3550"}}},
+      yAxis:{type:"value",min:-100,max:100,splitLine:{lineStyle:{color:"#1e2534"}},axisLabel:{color:"#8b93a5"}},
+      series:[
+        {type:"bar",data:items.map(i=>i.n),yAxisIndex:0,barWidth:"50%",itemStyle:{color:"rgba(140,150,175,.2)"}},
+        {type:"line",data:items.map(i=>i.index),smooth:true,symbol:"circle",symbolSize:4,
+         lineStyle:{width:2,color:"#5b8cff"},
+         areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:"rgba(91,140,255,.3)"},{offset:1,color:"rgba(91,140,255,0)"}])}}
+      ]
+    }, {replaceOpt:true});
+    $("sectorDetail").scrollIntoView({behavior:"smooth", block:"nearest"});
   }catch(e){ console.error(e); }
 }
 
@@ -340,11 +443,11 @@ $("newsTabs").addEventListener("click", e=>{
 window.addEventListener("resize", ()=>Object.values(charts).forEach(c=>c.resize()));
 
 /* ---------------- 启动 ---------------- */
-function loadAll(){ loadOverview(); loadTimeline(); loadSources(); loadKeywords(); loadNews(); loadTop(); }
+function loadAll(){ loadOverview(); loadTimeline(); loadSources(); loadKeywords(); loadSectors(); loadNews(); loadTop(); }
 loadAll();
 setInterval(loadOverview, 30000);
 setInterval(loadNews, 30000);
-setInterval(()=>{ loadTimeline(); loadSources(); loadKeywords(); loadTop(); }, 60000);
+setInterval(()=>{ loadTimeline(); loadSources(); loadKeywords(); loadSectors(); loadTop(); }, 60000);
 </script>
 </body>
 </html>

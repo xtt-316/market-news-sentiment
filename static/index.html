@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全市场新闻情绪指标</title>
+<script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"
+        onerror="this.remove();var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js';document.head.appendChild(s);"></script>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b26; --panel2:#1c2230; --border:#252d3f;
+    --text:#dce1ea; --muted:#8b93a5; --red:#f04a5e; --green:#2ecc8f;
+    --blue:#5b8cff; --amber:#f5a623;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:"Microsoft YaHei",system-ui,-apple-system,sans-serif;font-size:14px}
+  .wrap{max-width:1440px;margin:0 auto;padding:14px 18px 40px}
+
+  /* 顶栏 */
+  header{display:flex;align-items:center;justify-content:space-between;padding:6px 2px 14px;border-bottom:1px solid var(--border);margin-bottom:14px}
+  .logo{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:700}
+  .logo .dot{width:11px;height:11px;border-radius:50%;background:var(--red);box-shadow:0 0 10px var(--red);animation:pulse 2s infinite}
+  @keyframes pulse{50%{opacity:.4}}
+  .meta{color:var(--muted);font-size:12px;display:flex;gap:16px;align-items:center}
+  .meta b{color:var(--text);font-weight:600}
+
+  /* 卡片行 */
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px}
+  .card{background:linear-gradient(145deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:12px;padding:14px 18px;position:relative;overflow:hidden}
+  .card .k{color:var(--muted);font-size:12px;margin-bottom:6px}
+  .card .v{font-size:30px;font-weight:700;font-family:Consolas,monospace;line-height:1.1}
+  .card .sub{color:var(--muted);font-size:12px;margin-top:6px}
+  .zone-chip{display:inline-block;padding:2px 12px;border-radius:20px;font-size:13px;font-weight:700;color:#fff}
+  .up{color:var(--red)} .down{color:var(--green)}
+
+  /* 图表面板 */
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
+  .panel h3{font-size:14px;font-weight:600;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .panel h3 .note{color:var(--muted);font-weight:400;font-size:12px}
+  .chart{width:100%}
+  #mainChart{height:340px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+  #srcChart{height:250px} #posnegChart{height:250px} #kwChart{height:300px}
+
+  .tabs{display:flex;gap:6px}
+  .tabs button{background:var(--panel2);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:3px 12px;cursor:pointer;font-size:12px}
+  .tabs button.on{background:#1f2a44;border-color:var(--blue);color:var(--blue)}
+  .rng button{padding:3px 10px;font-size:12px}
+
+  /* 新闻区 */
+  .newsRow{display:grid;grid-template-columns:1.35fr 1fr;gap:12px}
+  .newslist{max-height:560px;overflow-y:auto}
+  .newslist::-webkit-scrollbar{width:6px}
+  .newslist::-webkit-scrollbar-thumb{background:#2c3550;border-radius:3px}
+  .news-item{padding:10px 10px;border-bottom:1px solid #1e2534;cursor:pointer;border-radius:8px}
+  .news-item:hover{background:#1b2233}
+  .news-item .n-title{margin-bottom:5px;line-height:1.45}
+  .news-item .n-meta{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px;flex-wrap:wrap}
+  .tag{padding:1px 8px;border-radius:4px;font-size:11px;font-weight:600}
+  .tag.pos{background:rgba(240,74,94,.15);color:var(--red)}
+  .tag.neg{background:rgba(46,204,143,.15);color:var(--green)}
+  .tag.neu{background:#262d3d;color:var(--muted)}
+  .src{color:var(--blue);font-size:11px}
+  .hitwords{color:var(--muted);font-size:11px}
+  .score-chip{font-family:Consolas,monospace;font-size:11px}
+
+  .topList{list-style:none;max-height:265px;overflow-y:auto}
+  .topList li{padding:8px 6px;border-bottom:1px solid #1e2534;display:flex;justify-content:space-between;gap:8px;cursor:pointer;border-radius:6px}
+  .topList li:hover{background:#1b2233}
+  .topList .t{flex:1;line-height:1.4}
+  .topList .s{color:var(--muted);font-size:11px;white-space:nowrap;font-family:Consolas,monospace}
+  .topList a{color:inherit;text-decoration:none}
+  .loading-tip{color:var(--muted);font-size:12px;padding:8px}
+
+  footer{color:#5a6275;font-size:11px;text-align:center;margin-top:20px;line-height:1.8}
+
+  @media (max-width:1000px){
+    .cards{grid-template-columns:repeat(2,1fr)}
+    .row2,.newsRow{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="dot"></span>全市场新闻情绪指标</div>
+    <div class="meta">
+      <span>数据源 <b>5</b> 家：新浪7×24 / 新浪财经 / 东财快讯 / 东财要闻 / 华尔街见闻</span>
+      <span>最近抓取 <b id="lastFetch">-</b></span>
+      <span>库内新闻 <b id="totalNews">-</b> 条 <span id="backfilling" style="color:var(--amber)"></span></span>
+    </div>
+  </header>
+
+  <div class="cards">
+    <div class="card">
+      <div class="k">全市场情绪指数（近6小时）</div>
+      <div class="v" id="vIndex">--</div>
+      <div class="sub"><span class="zone-chip" id="vZone">加载中</span></div>
+    </div>
+    <div class="card">
+      <div class="k">上证指数</div>
+      <div class="v" id="vSh">--</div>
+      <div class="sub" id="vShSub">沪深指数实时</div>
+    </div>
+    <div class="card">
+      <div class="k">今日利好 / 利空</div>
+      <div class="v"><span class="up" id="vPos">0</span><span style="color:var(--muted);font-size:18px"> / </span><span class="down" id="vNeg">0</span></div>
+      <div class="sub">多空比 <b id="vRatio">-</b></div>
+    </div>
+    <div class="card">
+      <div class="k">今日新闻总量</div>
+      <div class="v" id="vCount">--</div>
+      <div class="sub" id="vAvg">今日平均情绪 --</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>情绪指数 × 上证指数 对照
+      <span class="tabs rng" id="rngTabs">
+        <button data-h="24">24小时</button>
+        <button data-h="72" class="on">3天</button>
+        <button data-h="168">7天</button>
+      </span>
+    </h3>
+    <div id="mainChart" class="chart"></div>
+  </div>
+
+  <div class="row2">
+    <div class="panel"><h3>分来源情绪对比 <span class="note">24小时 · 指数越高越乐观</span></h3><div id="srcChart" class="chart"></div></div>
+    <div class="panel"><h3>正 / 负面新闻量趋势 <span class="note">24小时 · 按小时堆叠</span></h3><div id="posnegChart" class="chart"></div></div>
+  </div>
+
+  <div class="newsRow">
+    <div class="panel">
+      <h3>实时快讯流
+        <span class="tabs" id="newsTabs">
+          <button data-l="" class="on">全部</button>
+          <button data-l="1">利好</button>
+          <button data-l="-1">利空</button>
+        </span>
+      </h3>
+      <div class="newslist" id="newsList"><div class="loading-tip">加载中…</div></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="panel">
+        <h3>热词榜 <span class="note">24小时</span></h3>
+        <div id="kwChart" class="chart"></div>
+      </div>
+      <div class="panel">
+        <h3>十大利好 <span class="note">24小时 · 按情绪强度</span></h3>
+        <ul class="topList" id="topPos"><li class="loading-tip">加载中…</li></ul>
+      </div>
+      <div class="panel">
+        <h3>十大利空 <span class="note">24小时 · 按情绪强度</span></h3>
+        <ul class="topList" id="topNeg"><li class="loading-tip">加载中…</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    情绪打分：内置中文金融情绪词典 + 否定词/程度副词规则，全程本地计算，无外部AI调用。<br>
+    指数范围 [-100, +100]：≥40 极度贪婪 · 15~40 贪婪 · -15~15 中性 · -40~-15 恐慌 · ≤-40 极度恐慌。<br>
+    数据仅供参考，不构成投资建议。接口直连：新浪财经 / 东方财富 / 华尔街见闻。
+  </footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let curHours = 72, curLabel = "";
+const charts = {};
+
+function fmtHour(h){ // "2026-10-06 17" -> "10-06 17时"
+  const p = h.split(" ");
+  return p[0].slice(5) + " " + (p[1]||"") + "时";
+}
+
+/* ---------------- 概览 ---------------- */
+async function loadOverview(){
+  try{
+    const d = await (await fetch("/api/overview")).json();
+    $("vIndex").textContent = (d.index_value>0?"+":"") + d.index_value.toFixed(1);
+    $("vIndex").style.color = d.index_value >= 0 ? "var(--red)" : "var(--green)";
+    const z = $("vZone"); z.textContent = d.zone; z.style.background = d.zone_color;
+    const sh = (d.spot||{})["000001"];
+    if(sh){
+      $("vSh").textContent = sh.price;
+      $("vSh").className = "v " + (sh.pct >= 0 ? "up":"down");
+      $("vShSub").innerHTML = `${sh.pct>=0?"涨":"跌"} <b class="${sh.pct>=0?"up":"down"}">${sh.pct>=0?"+":""}${sh.pct}%</b>（${sh.chg>=0?"+":""}${sh.chg}）`;
+    }
+    $("vPos").textContent = d.stat.today_pos;
+    $("vNeg").textContent = d.stat.today_neg;
+    $("vRatio").textContent = d.pos_neg_ratio;
+    $("vCount").textContent = d.stat.today_count;
+    $("vAvg").textContent = "今日平均情绪 " + (d.stat.today_avg_score>0?"+":"") + d.stat.today_avg_score;
+    $("lastFetch").textContent = d.last_fetch_time || "-";
+    $("totalNews").textContent = d.backfill.total_news;
+    $("backfilling").textContent = d.backfill.running ? "（历史回填中…）" : "";
+  }catch(e){ console.error(e); }
+}
+
+/* ---------------- 主图 ---------------- */
+async function loadTimeline(){
+  try{
+    const d = await (await fetch("/api/timeline?hours=" + curHours)).json();
+    const labels = new Set();
+    (d.hourly||[]).forEach(h => labels.add(h.hour));
+    (d.kline||[]).forEach(k => labels.add(k.dt));
+    const xs = [...labels].sort();
+    const idx = xs.map(x => { const f=(d.hourly||[]).find(h=>h.hour===x); return f? f.index : null; });
+    const cnt = xs.map(x => { const f=(d.hourly||[]).find(h=>h.hour===x); return f? f.n : 0; });
+    const posc = xs.map(x => { const f=(d.hourly||[]).find(h=>h.hour===x); return f? f.pos_cnt : 0; });
+    const negc = xs.map(x => { const f=(d.hourly||[]).find(h=>h.hour===x); return f? f.neg_cnt : 0; });
+    const sh = xs.map(x => { const k=(d.kline||[]).find(k=>k.dt===x); return k? k.close : null; });
+    const lbl = xs.map(fmtHour);
+
+    charts.main = charts.main || echarts.init($("mainChart"));
+    charts.main.setOption({
+      tooltip:{trigger:"axis", backgroundColor:"#1c2230", borderColor:"#2c3550", textStyle:{color:"#dce1ea"}},
+      legend:{data:["情绪指数","上证指数","新闻量(右)"], textStyle:{color:"#8b93a5"}, top:0},
+      grid:{left:56,right:56,top:34,bottom:28},
+      xAxis:{type:"category", data:lbl, axisLine:{lineStyle:{color:"#2c3550"}}, axisLabel:{color:"#8b93a5"}},
+      yAxis:[
+        {type:"value",name:"情绪",min:-100,max:100,splitLine:{lineStyle:{color:"#1e2534"}},axisLabel:{color:"#8b93a5"},nameTextStyle:{color:"#8b93a5"}},
+        {type:"value",name:"上证",scale:true,splitLine:{show:false},axisLabel:{color:"#8b93a5"},nameTextStyle:{color:"#8b93a5"}},
+        {type:"value",name:"条数",splitLine:{show:false},axisLabel:{color:"#8b93a5"},nameTextStyle:{color:"#8b93a5"}}
+      ],
+      series:[
+        {name:"情绪指数",type:"line",data:idx,yAxisIndex:0,smooth:true,symbol:"none",lineStyle:{width:2.5,color:"#5b8cff"},
+         areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:"rgba(91,140,255,.35)"},{offset:1,color:"rgba(91,140,255,0)"}])},
+         markLine:{silent:true,symbol:"none",lineStyle:{color:"#555",type:"dashed"},data:[{yAxis:0}],label:{show:false}}},
+        {name:"上证指数",type:"line",data:sh,yAxisIndex:1,smooth:true,symbol:"none",connectNulls:true,lineStyle:{width:1.4,color:"#f5a623",opacity:.9}},
+        {name:"新闻量(右)",type:"bar",data:cnt,yAxisIndex:2,barWidth:"55%",itemStyle:{color:"rgba(140,150,175,.22)"}}
+      ]
+    }, {replaceOpt:true});
+
+    charts.posneg = charts.posneg || echarts.init($("posnegChart"));
+    charts.posneg.setOption({
+      tooltip:{trigger:"axis", backgroundColor:"#1c2230", borderColor:"#2c3550", textStyle:{color:"#dce1ea"}},
+      legend:{data:["利好","利空","中性"], textStyle:{color:"#8b93a5"}, top:0},
+      grid:{left:40,right:16,top:34,bottom:24},
+      xAxis:{type:"category",data:lbl,axisLabel:{color:"#8b93a5",fontSize:10},axisLine:{lineStyle:{color:"#2c3550"}}},
+      yAxis:{type:"value",splitLine:{lineStyle:{color:"#1e2534"}},axisLabel:{color:"#8b93a5"}},
+      series:[
+        {name:"利好",type:"bar",stack:"a",data:posc,itemStyle:{color:"#f04a5e"}},
+        {name:"利空",type:"bar",stack:"a",data:negc,itemStyle:{color:"#2ecc8f"}},
+        {name:"中性",type:"bar",stack:"a",data:xs.map((x,i)=>cnt[i]-posc[i]-negc[i]),itemStyle:{color:"rgba(139,147,165,.35)"}}
+      ]
+    }, {replaceOpt:true});
+  }catch(e){ console.error(e); }
+}
+
+/* ---------------- 分源 / 热词 ---------------- */
+async function loadSources(){
+  try{
+    const d = await (await fetch("/api/sources?hours=24")).json();
+    charts.src = charts.src || echarts.init($("srcChart"));
+    charts.src.setOption({
+      tooltip:{backgroundColor:"#1c2230",borderColor:"#2c3550",textStyle:{color:"#dce1ea"},formatter:p=>`${p[0].name}<br>指数 <b>${p[0].value}</b> · ${p[0].data.cnt}条`},
+      grid:{left:86,right:40,top:10,bottom:24},
+      xAxis:{type:"value",min:-40,max:40,splitLine:{lineStyle:{color:"#1e2534"}},axisLabel:{color:"#8b93a5"}},
+      yAxis:{type:"category",data:d.items.map(i=>i.name),axisLabel:{color:"#dce1ea"},axisLine:{lineStyle:{color:"#2c3550"}}},
+      series:[{type:"bar",data:d.items.map(i=>({value:i.index,cnt:i.n,itemStyle:{color:i.index>=0?"#f04a5e":"#2ecc8f",borderRadius:3}})),barWidth:14,label:{show:true,position:"right",color:"#8b93a5",fontSize:11}}]
+    }, {replaceOpt:true});
+  }catch(e){ console.error(e); }
+}
+
+async function loadKeywords(){
+  try{
+    const d = await (await fetch("/api/keywords?hours=24")).json();
+    const items = (d.items||[]).slice(0,15).reverse();
+    charts.kw = charts.kw || echarts.init($("kwChart"));
+    charts.kw.setOption({
+      tooltip:{backgroundColor:"#1c2230",borderColor:"#2c3550",textStyle:{color:"#dce1ea"}},
+      grid:{left:80,right:44,top:6,bottom:20},
+      xAxis:{type:"value",splitLine:{show:false},axisLabel:{show:false}},
+      yAxis:{type:"category",data:items.map(i=>i.word),axisLabel:{color:"#dce1ea"},axisLine:{lineStyle:{color:"#2c3550"}},axisTick:{show:false}},
+      series:[{type:"bar",data:items.map(i=>i.count),barWidth:10,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:"#2b4a8f"},{offset:1,color:"#5b8cff"}]),borderRadius:3},label:{show:true,position:"right",color:"#8b93a5",fontSize:11}}]
+    }, {replaceOpt:true});
+  }catch(e){ console.error(e); }
+}
+
+/* ---------------- 新闻流 / Top榜 ---------------- */
+const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+async function loadNews(){
+  try{
+    const url = `/api/news?hours=24&limit=60&order=ts DESC` + (curLabel!==""?`&label=${curLabel}`:"");
+    const d = await (await fetch(url)).json();
+    const box = $("newsList");
+    if(!d.items.length){ box.innerHTML = '<div class="loading-tip">该分类暂无新闻</div>'; return; }
+    box.innerHTML = d.items.map(n=>{
+      const cls = n.label===1?"pos":(n.label===-1?"neg":"neu");
+      const txt = n.label===1?"利好":(n.label===-1?"利空":"中性");
+      const hits = [...(n.pos_words||[]).map(w=>"▲"+w), ...(n.neg_words||[]).map(w=>"▼"+w)].slice(0,4).join(" ");
+      return `<div class="news-item" onclick="window.open('${(n.url||"#").replace(/'/g,"")}')">
+        <div class="n-title">${esc(n.title)}</div>
+        <div class="n-meta">
+          <span class="tag ${cls}">${txt}</span>
+          <span class="score-chip">${n.score>0?"+":""}${n.score.toFixed(2)}</span>
+          <span>${n.dt}</span>
+          <span class="src">${n.source==="sina724"?"新浪7×24":n.source==="sinaroll"?"新浪财经":n.source==="emfast"?"东财快讯":n.source==="emnews"?"东财要闻":n.source==="wscn"?"华尔街见闻":n.source}</span>
+          ${hits?`<span class="hitwords">${esc(hits)}</span>`:""}
+        </div>
+      </div>`;
+    }).join("");
+  }catch(e){ console.error(e); }
+}
+
+async function loadTop(){
+  try{
+    const [p, n] = await Promise.all([
+      (await fetch("/api/top?label=1&hours=24")).json(),
+      (await fetch("/api/top?label=-1&hours=24")).json()
+    ]);
+    const render = (items, color) => items.items.map((i,ix)=>`
+      <li onclick="window.open('${(i.url||"#").replace(/'/g,"")}')">
+        <span class="t"><span style="color:${color};font-weight:700;margin-right:6px">${ix+1}</span>${esc(i.title)}</span>
+        <span class="s">${i.dt} ${i.score>0?"+":""}${i.score.toFixed(2)}</span>
+      </li>`).join("") || '<li class="loading-tip">暂无数据</li>';
+    $("topPos").innerHTML = render(p, "var(--red)");
+    $("topNeg").innerHTML = render(n, "var(--green)");
+  }catch(e){ console.error(e); }
+}
+
+/* ---------------- 交互 ---------------- */
+$("rngTabs").addEventListener("click", e=>{
+  if(e.target.dataset.h){
+    curHours = +e.target.dataset.h;
+    document.querySelectorAll("#rngTabs button").forEach(b=>b.classList.toggle("on", b===e.target));
+    loadTimeline();
+  }
+});
+$("newsTabs").addEventListener("click", e=>{
+  if(e.target.dataset.l !== undefined){
+    curLabel = e.target.dataset.l;
+    document.querySelectorAll("#newsTabs button").forEach(b=>b.classList.toggle("on", b===e.target));
+    loadNews();
+  }
+});
+window.addEventListener("resize", ()=>Object.values(charts).forEach(c=>c.resize()));
+
+/* ---------------- 启动 ---------------- */
+function loadAll(){ loadOverview(); loadTimeline(); loadSources(); loadKeywords(); loadNews(); loadTop(); }
+loadAll();
+setInterval(loadOverview, 30000);
+setInterval(loadNews, 30000);
+setInterval(()=>{ loadTimeline(); loadSources(); loadKeywords(); loadTop(); }, 60000);
+</script>
+</body>
+</html>

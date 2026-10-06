@@ -1,0 +1,26 @@
+# 运行时产物
+data.db
+test.db
+server.log
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# ZCode 会话文件
+.zcode/
